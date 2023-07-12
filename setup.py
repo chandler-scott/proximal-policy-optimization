@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='ppo',
-    version='1.0.0',
+    version='1.1.0',
     description='Proximal Policy Optimization implemented on Gymnasium environments.',
     author='Chandler Scott',
     author_email='scottcd1@etsu.edu',
@@ -18,7 +18,9 @@ setup(
     entry_points={
         'console_scripts': [
             'ppo.train = ppo.run:train',
-            'ppo.play = ppo.run:play'
+            'ppo.play = ppo.run:play',
+            'ppo.server = ppo.run:federated_server',
+            'ppo.client = ppo.run:federated_client'
         ]
     }
 )

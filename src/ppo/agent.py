@@ -7,15 +7,9 @@ from torch.distributions.normal import Normal
 from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Box, Discrete
 from util.logger import CustomLogger
+from util.model_utils import save_models, load_models, build_network
+from util.socket_util import Client
 from .buffer import Buffer
-
-
-def build_network(sizes, activation, output_activation=nn.Identity):
-    layers = []
-    for j in range(len(sizes)-1):
-        act = activation if j < len(sizes)-2 else output_activation
-        layers += [nn.Linear(sizes[j], sizes[j+1]), act()]
-    return nn.Sequential(*layers)
 
 
 class Actor(nn.Module):
@@ -41,11 +35,11 @@ class CategoricalActor(Actor):
     def __init__(self, obs_dim, act_dim, hidden_sizes, activation):
         super().__init__()
 
-        self.logits_network = build_network(
+        self.p_net = build_network(
             [obs_dim] + list(hidden_sizes) + [act_dim], activation)
 
     def _distribution(self, obs):
-        logits = self.logits_network(obs)
+        logits = self.p_net(obs)
         return Categorical(logits=logits)
 
     def _log_prob_from_distribution(self, pi, act):
@@ -58,11 +52,11 @@ class GaussianActor(Actor):
         log_std = -0.5 * np.ones(act_dim, dtype=np.float32)
         self.log_std = torch.nn.Parameter(torch.as_tensor(log_std))
         # create network to handle mean values of gaussian distribution of continuous actions
-        self.mu_net = build_network(
+        self.p_net = build_network(
             [obs_dim] + list(hidden_sizes) + [act_dim], activation)
 
     def _distribution(self, obs):
-        mu = self.mu_net(obs)
+        mu = self.p_net(obs)
         std = torch.exp(self.log_std)
         return Normal(mu, std)
 
@@ -84,32 +78,56 @@ class Critic(nn.Module):
 
 
 class Agent:
-    def __init__(self, observations_space, action_space,
-                 hidden_sizes=(64, 64), activation=nn.Tanh,
+    def __init__(self, observation_space, action_space,
+                 policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
+                 activation=nn.Tanh,
                  policy_lr=3e-4, value_lr=1e-3,
+                 policy_save_file=None, policy_load_file=None,
+                 value_save_file=None, value_load_file=None,
                  local_steps_per_epoch=50,  gamma=0.99, lam=0.95) -> None:
-        obs_dim = observations_space.shape[0]
-
-        # policy builder depends on action space..
-        if isinstance(action_space, Box):
-            self.policy = GaussianActor(
-                obs_dim, action_space.shape[0], hidden_sizes, activation)
-        else:
-            self.policy = CategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation)
-
-        self.value = Critic(obs_dim, hidden_sizes, activation)
+        super(Agent, self).__init__()
+        obs_dim = observation_space.shape[0]
         self.buffer = Buffer(obs_dim, action_space.shape,
                              local_steps_per_epoch, gamma, lam)
+
+        self.policy_save_file, self.value_save_file = policy_save_file, value_save_file
+
+        # if load file not specified, create neural networks from scratch
+        self.create_networks(action_space, obs_dim, policy_hidden_sizes,
+                             value_hidden_sizes, activation)
+        # else, load our file
+        if (policy_load_file is not None):
+            self.load_networks(policy_load_file, value_load_file)
+
         self.policy_optimizer = Adam(self.policy.parameters(), lr=policy_lr)
         self.value_optimizer = Adam(self.value.parameters(), lr=value_lr)
 
-    
-    def save_models():
-        pass
+    def create_networks(self, action_space, obs_dim, policy_hidden_sizes,
+                        value_hidden_sizes, activation):
+        # create policy
+        # policy builder depends on action space..
+        if isinstance(action_space, Box):
+            self.policy = GaussianActor(
+                obs_dim, action_space.shape[0], policy_hidden_sizes, activation)
+        else:
+            self.policy = CategoricalActor(
+                obs_dim, action_space.n, policy_hidden_sizes, activation)
+        # create value
+        self.value = Critic(obs_dim, value_hidden_sizes, activation)
 
-    def load_models():
-        pass
+    def save_networks(self):
+        CustomLogger().info('Saving value and policy networks..')
+        save_models({
+            self.policy.p_net: self.policy_save_file,
+            self.value.v_net: self.value_save_file
+        })
+
+    def load_networks(self, policy_load_file, value_load_file):
+        CustomLogger().info('Loading value and policy networks..')
+        load_models({
+            self.policy.p_net: policy_load_file,
+            self.value.v_net: value_load_file
+        })
 
     def step(self, observation) -> Tuple[Any, Any, Any]:
         with torch.no_grad():
@@ -159,7 +177,7 @@ class Agent:
             kl = policy_info['kl']
 
             if kl > 1.5 * target_kl:
-                #CustomLogger().info('Early stopping at step %d due to reaching max kl.' % i)
+                # CustomLogger().info('Early stopping at step %d due to reaching max kl.' % i)
                 break
             loss_pi.backward()
             self.policy_optimizer.step()
@@ -171,20 +189,75 @@ class Agent:
             loss_v.backward()
             self.value_optimizer.step()
 
-    def print_network(self, message, network):
-        '''
-        Print the neural network for debugging purposes
-        '''
-        CustomLogger().debug(f"{message}")
-        for i, layer in enumerate(network):
-            if isinstance(layer, torch.nn.Linear):
-                # Print the weight and bias of each Linear layer
-                CustomLogger().debug(f"Layer {i}:")
-                CustomLogger().debug(f"Weight: {layer.weight}")
-                CustomLogger().debug(f"Bias: {layer.bias}")
-            elif isinstance(layer, torch.nn.Tanh):
-                CustomLogger().debug(f"Layer {i}: Tanh activation")
-            elif isinstance(layer, torch.nn.Identity):
-                CustomLogger().debug(f"Layer {i}: Identity activation")
-            else:
-                CustomLogger().debug(f"Layer {i}: Unknown layer type")
+    def close(self):
+        if (self.policy_save_file is not None and self.value_save_file is not None):
+            self.save_networks()
+
+
+class AgentClient(Agent, Client):
+    def __init__(self, observation_space, action_space,
+                 policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
+                 activation=nn.Tanh,
+                 policy_lr=3e-4, value_lr=1e-3,
+                 policy_save_file=None, policy_load_file=None,
+                 value_save_file=None, value_load_file=None,
+                 local_steps_per_epoch=50,  gamma=0.99, lam=0.95, port=1234):
+        super(AgentClient, self).__init__(
+            observation_space=observation_space, action_space=action_space,
+            policy_hidden_sizes=policy_hidden_sizes, value_hidden_sizes=value_hidden_sizes,
+            activation=activation,
+            policy_lr=policy_lr, value_lr=value_lr,
+            policy_save_file=policy_save_file, policy_load_file=policy_load_file,
+            value_save_file=value_save_file, value_load_file=value_load_file,
+            local_steps_per_epoch=local_steps_per_epoch,  gamma=gamma, lam=lam
+        )
+        self.port = port
+        self.setup()
+
+    def load_models(self, p_net, v_net):
+        self.policy.p_net.load_state_dict(p_net)
+        self.value.v_net.load_state_dict(v_net)
+
+    def send_models(self):
+        payload = (self.policy.p_net.state_dict(), self.value.v_net.state_dict())
+        self.send(payload)
+
+    def train(self, env, n_episodes, steps_per_epoch):
+        observation, cumulative_reward = env.reset()[0], 0
+        for i in range(n_episodes):
+            print(f'episodes {i+1} of {n_episodes}')
+
+            for t in range(steps_per_epoch):
+                # run policy in env for T timesteps
+                action, value, logp = self.step(torch.as_tensor(
+                    np.array(observation), dtype=torch.float32))
+
+                next_observation, reward, terminated, truncated, _ = env.step(
+                    action)
+                done = terminated or truncated
+                cumulative_reward += reward
+
+                # save and log
+                self.buffer.store(observation, action, reward, value, logp)
+
+                # update observation
+                observation = next_observation
+
+                epoch_ended = t == steps_per_epoch-1
+
+                if done or epoch_ended:
+                    if truncated or epoch_ended:
+                        _, v, _ = self.step(torch.as_tensor(
+                            np.array(observation), dtype=torch.float32))
+                        # logger.info('truncated' if truncated else 'epoch ended')
+                    else:
+                        v = 0
+                    # compute advantage estimates
+                    self.buffer.finish_path(v)
+                    observation, cumulative_reward = env.reset()[0], 0
+
+            # learn
+            self.learn()
+
+    def close(self):
+        super().close()
