@@ -1,16 +1,13 @@
-import sys
+from time import sleep
 from util.parser import *
 from util.logger import CustomLogger
-from util.model_utils import aggregate_models, print_model
-from .agent import Agent, AgentClient
 import gymnasium as gym
 from typing import Tuple
 import torch
 from torch import nn
 import numpy as np
-import envs
-from util.aggregator import Aggregator, AggregatorServer
-from util.socket_util import Server, Client
+from models.aggregator import Aggregator, AggregatorServer
+from models.agent import Agent, AgentClient
 
 
 def setup_aggregator() -> Tuple[CustomLogger, Aggregator]:
@@ -184,20 +181,10 @@ def play() -> None:
     logger.info(avg_reward)
 
 
-def train_model():
-    logger, env, agent, n_episodes, steps_per_epoch = setup_agent(
-        TrainingParser)
-
-    agent.train(env, n_episodes, steps_per_epoch)
-
-    ## Training Loop ##
-    logger.info('Train')
-    logger.info(f'cumulative_reward')
-
 
 def federated_server():
     # Setup
-    parser = AggregatorParser()
+    parser = AggregatorServerParser()
     environment, render_mode = parser.get_environment()
     env = gym.make(environment, render_mode=render_mode)
     p_load = parser.args.policy_load_file
@@ -207,27 +194,46 @@ def federated_server():
     n_episodes = int(parser.args.n_episodes)
     port = int(parser.args.port)
     n_clients = int(parser.args.n_agents)
+    steps_per_epoch = int(parser.args.steps_per_epoch)
+    n_epochs = int(parser.args.n_epochs)
 
     logger = CustomLogger()
     agg_server = AggregatorServer(obs_dim=env.observation_space, act_dim=env.action_space,
                                   p_load=p_load, p_save=p_save, v_load=v_load, v_save=v_save,
                                   n_clients=n_clients, n_episodes=n_episodes, port=port)
 
-    payload = (agg_server.policy.p_net.state_dict(),
-               agg_server.value.v_net.state_dict())
+    training_configuration = {
+        'env': env.unwrapped.spec.id,
+        'n_episodes': n_episodes,
+        'n_epochs': n_epochs,
+        'steps_per_epoch': steps_per_epoch,
+    }
 
-    logger.info('sending payload...')
-    agg_server.send(payload)
-    logger.info('payload sent!')
+    #logger.info('sending training configuration...')
+    agg_server.send(training_configuration)
+    logger.info('training configuration sent!')
+
+    #logger.info('waiting for ACK...')
+    agg_server.receive()
+    logger.info('ACK received!')
 
     try:
-        logger.info('waiting to receive payload...')
-        p_models, v_models = agg_server.receive_models()
-        logger.info(
-            f'received payload!')
+        for i in range(n_epochs):
+            payload = (agg_server.policy.p_net.state_dict(),
+                       agg_server.value.v_net.state_dict())
 
-        logger.info('aggregating payload...')
-        policy, value = agg_server.aggregate(p_models, v_models)
+            #logger.info('sending payload...')
+            agg_server.send(payload)
+            logger.info('payload sent!')
+
+            #logger.info('waiting to receive payload...')
+            p_models, v_models = agg_server.receive_models()
+            logger.info(
+                f'received payload!')
+
+            logger.info('aggregating payload...')
+            policy, value = agg_server.aggregate(p_models, v_models)
+        agg_server.send('ACK')
 
     except ConnectionError:
         CustomLogger().error("Connection error!")
@@ -240,26 +246,42 @@ def federated_server():
 
 def federated_client():
     logger, env, agent, n_episodes, steps_per_epoch = setup_agentclient(
-        TrainingParser)
+        AgentClientParser)
+
+    logger.info('waiting to receive training configuration.')
+    agent.receive_config()
+    #logger.info('training configuration received! sending ACK...')
+    
+
+    #logger.info('ACK sent! configuring...')
+    agent.configure_training()
+    logger.info(f'done configuring!')
+
+    sleep(1)
+    agent.send_ack()
+    
+    logger.info(f'ACK sent!')
+
 
     try:
 
-        logger.info('waiting to receive payload.')
-        p_net, v_net = agent.receive()
-        agent.load_models(p_net, v_net)
-        logger.info('payload received! commencing training..')
+        for i in range(agent.n_epochs):
+            logger.info('waiting to receive payload.')
+            p_net, v_net = agent.receive()
+            agent.load_models(p_net, v_net)
+            logger.info('payload received! commencing training..')
 
-        agent.train(env, n_episodes, steps_per_epoch)
+            agent.train()
 
-        logger.info('sending payload...')
-        agent.send_models()
-        logger.info('payload sent!')
+            logger.info('sending payload...')
+            agent.send_models()
+            logger.info('payload sent!')
 
         logger.info('waiting to receive ACK...')
         agent.receive()
         logger.info('received ACK. closing...')
 
     except Exception as e:
-        logger.error(f'Error: {str(e)}')
+        logger.error(f'Error:\n {type(e).__name__}: {str(e)}')
     finally:
         agent.close()

@@ -1,3 +1,4 @@
-- create veins sim
-- test training
-- C++ -> Python API
+- move PPO repo from school -> dev
+- fix aggregation
+- test fed learning
+- veins sim -> tap into vehicles' code

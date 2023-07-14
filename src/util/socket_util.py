@@ -81,6 +81,7 @@ class Server:
             thread.join()
 
         received_data = []
+        print(received_data)
         while not received_data_queue.empty():
             received_data.append(received_data_queue.get())
 
@@ -116,6 +117,7 @@ class Client:
             if sent == 0:
                 raise RuntimeError("Socket connection broken")
             total_sent += sent
+
 
     def receive(self):
         data = self.client_socket.recv(self.buffer_size)
