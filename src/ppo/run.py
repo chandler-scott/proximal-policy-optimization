@@ -1,4 +1,6 @@
 from time import sleep
+import time
+from util.model_utils import save_models as save_m
 from util.parser import *
 from util.logger import CustomLogger
 import gymnasium as gym
@@ -45,9 +47,9 @@ def setup_agent(argparser: Parser, actor_critic: Agent = Agent) -> Tuple[CustomL
     logs_file, stats_file = parser.args.logs, parser.args.stats
     lam, gamma = parser.args.lam, parser.args.gamma
     policy_lr, policy_size = parser.args.policy_lr, parser.args.policy_hidden_size
-    policy_save_file, policy_load_file = parser.args.policy_save_file, parser.args.policy_load_file
+    policy_load_file = parser.args.policy_load_file
     value_lr, value_size = parser.args.value_lr, parser.args.value_hidden_size
-    value_save_file, value_load_file = parser.args.value_save_file, parser.args.value_load_file
+    value_load_file = parser.args.value_load_file
 
     # create env, agent, logger
 
@@ -55,11 +57,13 @@ def setup_agent(argparser: Parser, actor_critic: Agent = Agent) -> Tuple[CustomL
     agent = actor_critic(observation_space=env.observation_space, action_space=env.action_space,
                          local_steps_per_epoch=steps_per_epoch,
                          policy_lr=policy_lr, policy_hidden_sizes=policy_size,
-                         policy_save_file=policy_save_file, policy_load_file=policy_load_file,
+                         policy_load_file=policy_load_file,
                          value_lr=value_lr, value_hidden_sizes=value_size,
-                         value_save_file=value_save_file, value_load_file=value_load_file,
+                         value_load_file=value_load_file,
                          lam=lam, gamma=gamma)
-    logger = CustomLogger(logs_file, stats_file)
+    logger = CustomLogger(logs_file, stats_file=stats_file)
+
+    logger.stats_file = f'./out/{stats_file}'
 
     return logger, env, agent, n_episodes, steps_per_epoch
 
@@ -84,20 +88,21 @@ def setup_agentclient(argparser: Parser, actor_critic: AgentClient = AgentClient
     logs_file, stats_file = parser.args.logs, parser.args.stats
     lam, gamma = parser.args.lam, parser.args.gamma
     policy_lr, policy_size = parser.args.policy_lr, parser.args.policy_hidden_size
-    policy_save_file, policy_load_file = parser.args.policy_save_file, parser.args.policy_load_file
+    policy_load_file = parser.args.policy_load_file
     value_lr, value_size = parser.args.value_lr, parser.args.value_hidden_size
-    value_save_file, value_load_file = parser.args.value_save_file, parser.args.value_load_file
+    value_load_file = parser.args.value_load_file
+    save_models = parser.args.save_models
 
+    port = int(parser.args.port)
     # create env, agent, logger
 
     env = gym.make(environment, render_mode='rgb_array')
     agent = actor_critic(observation_space=env.observation_space, action_space=env.action_space,
                          local_steps_per_epoch=steps_per_epoch,
                          policy_lr=policy_lr, policy_hidden_sizes=policy_size,
-                         policy_save_file=policy_save_file, policy_load_file=policy_load_file,
+                         value_load_file=value_load_file, policy_load_file=policy_load_file,
                          value_lr=value_lr, value_hidden_sizes=value_size,
-                         value_save_file=value_save_file, value_load_file=value_load_file,
-                         lam=lam, gamma=gamma)
+                         lam=lam, gamma=gamma, port=port, save_models=save_models)
 
     logger = CustomLogger(logs_file, stats_file)
 
@@ -179,7 +184,7 @@ def play() -> None:
                 break
     avg_reward = total_reward / n_episodes
     logger.info(avg_reward)
-
+    logger.statistics(str(avg_reward))
 
 
 def federated_server():
@@ -187,10 +192,9 @@ def federated_server():
     parser = AggregatorServerParser()
     environment, render_mode = parser.get_environment()
     env = gym.make(environment, render_mode=render_mode)
-    p_load = parser.args.policy_load_file
-    p_save = parser.args.policy_save_file
-    v_load = parser.args.value_load_file
-    v_save = parser.args.value_save_file
+    save_models = parser.args.save_models
+    save_each_epoch = parser.args.save_each_epoch
+    save_client_models = parser.args.save_client_models
     n_episodes = int(parser.args.n_episodes)
     port = int(parser.args.port)
     n_clients = int(parser.args.n_agents)
@@ -199,8 +203,9 @@ def federated_server():
 
     logger = CustomLogger()
     agg_server = AggregatorServer(obs_dim=env.observation_space, act_dim=env.action_space,
-                                  p_load=p_load, p_save=p_save, v_load=v_load, v_save=v_save,
-                                  n_clients=n_clients, n_episodes=n_episodes, port=port)
+                                  n_clients=n_clients, n_episodes=n_episodes, port=port,
+                                  save_each_epoch=save_each_epoch, save_client_models=save_client_models,
+                                  save_models=save_models)
 
     training_configuration = {
         'env': env.unwrapped.spec.id,
@@ -209,31 +214,48 @@ def federated_server():
         'steps_per_epoch': steps_per_epoch,
     }
 
-    #logger.info('sending training configuration...')
-    agg_server.send(training_configuration)
-    logger.info('training configuration sent!')
+    final_episode = 0
 
-    #logger.info('waiting for ACK...')
-    agg_server.receive()
-    logger.info('ACK received!')
+    # send training config
+    ack = agg_server.send__rcv_payload(training_configuration)
 
     try:
         for i in range(n_epochs):
+            # send nets
+            logger.info(f'Training epoch {i+1} of {n_epochs}.')
+            logger.info('sending models..')
             payload = (agg_server.policy.p_net.state_dict(),
                        agg_server.value.v_net.state_dict())
+            models = agg_server.send__rcv_payload(payload)
+            logger.info('models sent!')
+            client_models = []
+            p_models = []
+            v_models = []
+            episode = (i+1) * n_episodes
 
-            #logger.info('sending payload...')
-            agg_server.send(payload)
-            logger.info('payload sent!')
+            for index, (x, y) in enumerate(models):
+                p_models.append(x)
+                v_models.append(y)
+                if agg_server.save_client_models is True:
+                    client_models.append((x, f'client{(index+1)}_p_{episode}'))
+                    client_models.append((y, f'client{index+1}_v_{episode}'))
 
-            #logger.info('waiting to receive payload...')
-            p_models, v_models = agg_server.receive_models()
-            logger.info(
-                f'received payload!')
+            logger.info('aggregating...')
+            agg_server.aggregate(p_models, v_models)
 
-            logger.info('aggregating payload...')
-            policy, value = agg_server.aggregate(p_models, v_models)
-        agg_server.send('ACK')
+            if agg_server.save_each_epoch is True:
+                logger.info("saving this epoch's aggregated model..")
+                agg_server.save_aggregate(
+                    p_save=f'fed_p_{episode}', v_save=f'fed_v_{episode}')
+                logger.info('saved .')
+
+            if agg_server.save_client_models is True:
+                logger.info("saving clients' models")
+                save_m(client_models)
+                logger.info('save client success')
+
+            agg_server.send_ack()
+            final_episode = (i+1) * n_episodes
 
     except ConnectionError:
         CustomLogger().error("Connection error!")
@@ -241,45 +263,35 @@ def federated_server():
         CustomLogger().error(f"Different error!\n {str(e)}")
     finally:
         # print(value.state_dict().items())
-        agg_server.close()
+        logger.info('closing ..')
+        agg_server.close(final_episode)
 
 
 def federated_client():
     logger, env, agent, n_episodes, steps_per_epoch = setup_agentclient(
         AgentClientParser)
 
-    logger.info('waiting to receive training configuration.')
+    # get training config
     agent.receive_config()
-    #logger.info('training configuration received! sending ACK...')
-    
-
-    #logger.info('ACK sent! configuring...')
+    logger.info(agent.training_config.items())
     agent.configure_training()
-    logger.info(f'done configuring!')
-
-    sleep(1)
     agent.send_ack()
-    
-    logger.info(f'ACK sent!')
-
 
     try:
-
         for i in range(agent.n_epochs):
-            logger.info('waiting to receive payload.')
-            p_net, v_net = agent.receive()
-            agent.load_models(p_net, v_net)
-            logger.info('payload received! commencing training..')
+            logger.info(f'training epoch {i+1} of {agent.n_epochs}')
+            try:
+                logger.info('waiting to receive models..')
+                agent.receive_models()
+                logger.info('models received!')
+            except ConnectionError:
+                model = agent.ask_for_models()
+                logger.info(model)
+                logger.info('received resend model')
 
+            logger.info('recieved updated model.')
             agent.train()
-
-            logger.info('sending payload...')
-            agent.send_models()
-            logger.info('payload sent!')
-
-        logger.info('waiting to receive ACK...')
-        agent.receive()
-        logger.info('received ACK. closing...')
+            ack = agent.send_models()
 
     except Exception as e:
         logger.error(f'Error:\n {type(e).__name__}: {str(e)}')

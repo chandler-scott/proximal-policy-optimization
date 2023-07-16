@@ -42,12 +42,11 @@ class Parser:
 
         # file load/save
         self.parser.add_argument(
-            '-p_save', '--policy_save_file', help='Policy neural network save file', default='policy')
+            '-Sm', '--save_models', help='Whether to save models at the end of training',
+            action='store_true')
         self.parser.add_argument(
             '-p_load', '--policy_load_file', help='Policy neural network load file',
             default=None)
-        self.parser.add_argument(
-            '-v_save', '--value_save_file', help='Value neural network save file', default='value')
         self.parser.add_argument(
             '-v_load', '--value_load_file', help='Value neural network load file',
             default=None)
@@ -75,6 +74,13 @@ class AggregatorServerParser(Parser):
             '-p', '--port', help='Port Number', default=1234)
         self.parser.add_argument(
             '-a', '--n_agents', help='Number of client agents', default=1)
+        self.parser.add_argument(
+            '-Se', '--save_each_epoch', help='Whether to save models each epoch',
+            action='store_true')
+        self.parser.add_argument(
+            '-Sc', '--save_client_models', help='Whether to save client models',
+            action='store_true')
+        
 
         self.args = self.parser.parse_args()
 

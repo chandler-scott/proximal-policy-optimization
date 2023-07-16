@@ -12,9 +12,9 @@ def build_network(sizes, activation, output_activation=nn.Identity):
     return nn.Sequential(*layers)
 
 
-def save_models(model_filepath_dict: dict = {}) -> None:
-    for model, filepath in model_filepath_dict.items():
-        torch.save(model.state_dict(), f'./out/models/{filepath}')
+def save_models(model_filepath_list: list = []) -> None:
+    for model, filepath in model_filepath_list:
+        torch.save(model, f'./out/models/{filepath}')
 
 
 def load_models(model_filepath_dict: dict = {}) -> None:

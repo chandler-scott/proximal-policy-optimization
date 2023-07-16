@@ -5,6 +5,7 @@ import logging
 class CustomLogger:
     _instance = None
 
+
     def __new__(cls, log_file=None, stats_file=None):
         if not cls._instance:
             cls._instance = super().__new__(cls)
@@ -25,9 +26,11 @@ class CustomLogger:
                 cls._instance.logger.addHandler(file_handler)
 
             if stats_file:
+                
                 cls._instance.create_output_folder()
+                # Assign stats_file attribute
                 cls._instance.stats_file = f'./out/{stats_file}'
-                cls._instance.create_stats_file(formatter)
+                cls._instance.create_stats_file()  # Call create_stats_file method
 
         return cls._instance
 
@@ -53,7 +56,7 @@ class CustomLogger:
     def create_stats_file(self) -> None:
         with open(self.stats_file, 'w') as f:
             # Modify the header row as needed
-            f.write('Header 1, Header 2, Header 3\n')
+            f.write('Average Reward\n')
 
     def statistics(self, message) -> None:
         try:

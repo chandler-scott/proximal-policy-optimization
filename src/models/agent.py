@@ -7,20 +7,24 @@ from ppo.actor_critic import *
 
 import torch
 
+
 class Agent:
     def __init__(self, observation_space, action_space,
                  policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
                  activation=nn.Tanh,
                  policy_lr=3e-4, value_lr=1e-3,
-                 policy_save_file=None, policy_load_file=None,
-                 value_save_file=None, value_load_file=None,
+                 policy_load_file=None,
+                 save_models=False, value_load_file=None,
                  local_steps_per_epoch=50,  gamma=0.99, lam=0.95) -> None:
         super(Agent, self).__init__()
         obs_dim = observation_space.shape[0]
         self.buffer = Buffer(obs_dim, action_space.shape,
                              local_steps_per_epoch, gamma, lam)
 
-        self.policy_save_file, self.value_save_file = policy_save_file, value_save_file
+        if save_models is True:
+            self.policy_save_file, self.value_save_file = 'p_save', 'v_save'
+
+        self.save_models = save_models
 
         # if load file not specified, create neural networks from scratch
         self.create_networks(action_space, obs_dim, policy_hidden_sizes,
@@ -47,10 +51,10 @@ class Agent:
 
     def save_networks(self):
         CustomLogger().info('Saving value and policy networks..')
-        save_models({
-            self.policy.p_net: self.policy_save_file,
-            self.value.v_net: self.value_save_file
-        })
+        save_models([
+            (self.policy.p_net.state_dict(), self.policy_save_file),
+            (self.value.v_net.state_dict(), self.value_save_file)
+        ])
 
     def load_networks(self, policy_load_file, value_load_file):
         CustomLogger().info('Loading value and policy networks..')
@@ -120,7 +124,7 @@ class Agent:
             self.value_optimizer.step()
 
     def close(self):
-        if (self.policy_save_file is not None and self.value_save_file is not None):
+        if (self.save_models):
             self.save_networks()
 
 
@@ -129,16 +133,16 @@ class AgentClient(Agent, Client):
                  policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
                  activation=nn.Tanh,
                  policy_lr=3e-4, value_lr=1e-3,
-                 policy_save_file=None, policy_load_file=None,
-                 value_save_file=None, value_load_file=None,
+                 policy_load_file=None, value_load_file=None,
+                 save_models=save_models,
                  local_steps_per_epoch=50,  gamma=0.99, lam=0.95, port=1234):
         super(AgentClient, self).__init__(
             observation_space=observation_space, action_space=action_space,
             policy_hidden_sizes=policy_hidden_sizes, value_hidden_sizes=value_hidden_sizes,
             activation=activation,
             policy_lr=policy_lr, value_lr=value_lr,
-            policy_save_file=policy_save_file, policy_load_file=policy_load_file,
-            value_save_file=value_save_file, value_load_file=value_load_file,
+            save_models=save_models, policy_load_file=policy_load_file,
+            value_load_file=value_load_file,
             local_steps_per_epoch=local_steps_per_epoch,  gamma=gamma, lam=lam
         )
         self.port = port
@@ -150,6 +154,7 @@ class AgentClient(Agent, Client):
 
     def receive_config(self):
         self.training_config = self.receive()
+        return self.training_config
 
     def configure_training(self):
         self.env = gym.make(self.training_config['env'])
@@ -159,12 +164,17 @@ class AgentClient(Agent, Client):
 
     def receive_models(self):
         p_net, v_net = self.receive()
-        return p_net, v_net
+        self.load_models(p_net, v_net)
 
     def send_models(self):
         payload = (self.policy.p_net.state_dict(),
                    self.value.v_net.state_dict())
-        self.send(payload)
+        return send_receive_with_timeout(lambda: self.send(payload),
+                                         self.receive, timeout=1, max_retries=3)
+
+    def send_payload(self, payload):
+        return send_receive_with_timeout(lambda: self.send(payload),
+                                         self.receive, timeout=1, max_retries=3)
 
     def send_ack(self):
         payload = 'ACK'
