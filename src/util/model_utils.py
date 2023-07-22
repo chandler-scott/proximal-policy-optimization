@@ -1,8 +1,48 @@
 import io
+import gymnasium as gym
+import numpy as np
+import pickle
 import torch
 from torch import nn
 from util import CustomLogger
 
+def state_dict_to_bytes(state_dict):
+    bytes_io = io.BytesIO()
+
+    # Convert state dictionaries to byte format and save them to BytesIO objects
+    torch.save(state_dict, bytes_io)
+
+    # Get the byte representations as strings
+    bytes = bytes_io.getvalue()
+
+    return bytes
+
+def bytes_to_state_dict(bytes):
+    # Create BytesIO objects from the byte representations
+    bytes_io = io.BytesIO(bytes)
+
+    # Load the state dictionaries from the BytesIO objects
+    state_dict = torch.load(bytes_io, map_location=torch.device('cpu'))
+
+    return state_dict
+
+def serialize_state_dict(state_dict):
+    serialized_state_dict = pickle.dumps(state_dict)
+    return serialized_state_dict
+
+def deserialize_state_dict(serialized_state_dict):
+    state_dict = pickle.loads(serialized_state_dict)
+    return state_dict
+
+def zeros_box_space(box_size, lower_bound=-1, upper_bound=1):
+    # Check if the provided bounds are valid
+    if lower_bound >= upper_bound:
+        raise ValueError("Lower bound must be less than the upper bound.")
+
+    # Create the Box space initialized with zeros
+    box_space = gym.spaces.Box(low=lower_bound, high=upper_bound, shape=(box_size,), dtype=np.float32)
+
+    return box_space
 
 def build_network(sizes, activation, output_activation=nn.Identity):
     layers = []
@@ -14,19 +54,19 @@ def build_network(sizes, activation, output_activation=nn.Identity):
 
 def save_models(model_filepath_list: list = []) -> None:
     for model, filepath in model_filepath_list:
-        torch.save(model, f'./out/models/{filepath}')
+        torch.save(model, f'./models/{filepath}')
 
 
 def load_models(model_filepath_dict: dict = {}) -> None:
 
     for model, filepath in model_filepath_dict.items():
-        with open(f'./out/models/{filepath}', 'rb') as f:
+        with open(f'./models/{filepath}', 'rb') as f:
             buffer = io.BytesIO(f.read())
         state_dict = torch.load(buffer)
         model.load_state_dict(state_dict, strict=False)
 
 
-def aggregate_models(state_dicts, empty_averaged_model) -> nn.Module:
+def aggregate_models(state_dicts:list, empty_averaged_model) -> nn.Module:
     ''' 
     Aggregate neural networks by taking the 
     mean of each parameter and weight 

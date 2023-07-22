@@ -1,4 +1,6 @@
 from .test_world import TestWorld
+from .veins_simulation import VeinsSimulation
+
 import gymnasium as gym
 
 

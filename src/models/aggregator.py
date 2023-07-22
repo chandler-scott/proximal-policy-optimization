@@ -41,10 +41,12 @@ class Aggregator:
         self.value = Critic(obs_dim, hidden_sizes, activation)
         self.value_copy = Critic(obs_dim, hidden_sizes, activation)
 
-    def load(self):
+    def load(self, p_load=None, v_load=None):
+        p_file = 'fed_p' if p_load is None else p_load
+        v_file = 'fed_v' if v_load is None else v_load
         load_models({
-            self.policy.p_net: self.p_load,
-            self.value.v_net: self.v_load,
+            self.policy.p_net: p_file,
+            self.value.v_net: v_file,
         })
 
     def save_aggregate(self, p_save=None, v_save=None, episode=None):
@@ -56,7 +58,7 @@ class Aggregator:
             (self.value.v_net.state_dict(), v_save if v_save is not None else v_file)
         ])
 
-    def aggregate(self, policy_models, value_models):
+    def aggregate(self, policy_models:list, value_models:list):
         self.policy.p_net = aggregate_models(
             policy_models, self.policy_copy.p_net)
         self.value.v_net = aggregate_models(

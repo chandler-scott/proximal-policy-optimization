@@ -20,7 +20,10 @@ setup(
             'ppo.train = ppo.run:train',
             'ppo.play = ppo.run:play',
             'ppo.server = ppo.run:federated_server',
-            'ppo.client = ppo.run:federated_client'
+            'ppo.client = ppo.run:federated_client',
+            'ppo.test = ppo.run:io_test'
+
         ]
+        
     }
 )

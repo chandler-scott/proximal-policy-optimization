@@ -1,6 +1,6 @@
 from time import sleep
 import time
-from util.model_utils import save_models as save_m
+from util.model_utils import save_models as save_m, state_dict_to_bytes, bytes_to_state_dict
 from util.parser import *
 from util.logger import CustomLogger
 import gymnasium as gym
@@ -202,6 +202,8 @@ def federated_server():
     n_epochs = int(parser.args.n_epochs)
 
     logger = CustomLogger()
+    print(type(env.observation_space))
+    print(type(env.action_space))
     agg_server = AggregatorServer(obs_dim=env.observation_space, act_dim=env.action_space,
                                   n_clients=n_clients, n_episodes=n_episodes, port=port,
                                   save_each_epoch=save_each_epoch, save_client_models=save_client_models,
@@ -297,3 +299,31 @@ def federated_client():
         logger.error(f'Error:\n {type(e).__name__}: {str(e)}')
     finally:
         agent.close()
+
+
+class RandomModel(nn.Module):
+    def __init__(self):
+        super(RandomModel, self).__init__()
+        self.fc1 = nn.Linear(10, 20)
+        self.fc2 = nn.Linear(20, 5)
+
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+def io_test():
+    model = RandomModel()
+
+    def initialize_random_parameters(model):
+        for param in model.parameters():
+            param.data = torch.randn_like(param)
+    
+    initialize_random_parameters(model)
+
+    state_dict = model.state_dict()
+    print(state_dict)
+    the_bytes = state_dict_to_bytes(state_dict)
+    # print(the_bytes)
+    state_dict = bytes_to_state_dict(the_bytes)
+    print(state_dict)
