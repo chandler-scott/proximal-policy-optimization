@@ -4,11 +4,12 @@ from torch.optim import Adam
 from torch.distributions.categorical import Categorical
 from gymnasium.spaces import Box, Discrete
 from ppo.actor_critic import *
+from .base import BaseModel
 
 import torch
 
 
-class Agent:
+class Agent(BaseModel):
     def __init__(self, observation_space, action_space,
                  policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
                  activation=nn.Tanh,
@@ -31,23 +32,10 @@ class Agent:
                              value_hidden_sizes, activation)
         # else, load our file
         if (policy_load_file is not None):
-            self.load_networks(policy_load_file, value_load_file)
+            self.load_models_from_file(policy_load_file, value_load_file)
 
         self.policy_optimizer = Adam(self.policy.parameters(), lr=policy_lr)
         self.value_optimizer = Adam(self.value.parameters(), lr=value_lr)
-
-    def create_networks(self, action_space, obs_dim, policy_hidden_sizes,
-                        value_hidden_sizes, activation):
-        # create policy
-        # policy builder depends on action space..
-        if isinstance(action_space, Box):
-            self.policy = GaussianActor(
-                obs_dim, action_space.shape[0], policy_hidden_sizes, activation)
-        else:
-            self.policy = CategoricalActor(
-                obs_dim, action_space.n, policy_hidden_sizes, activation)
-        # create value
-        self.value = Critic(obs_dim, value_hidden_sizes, activation)
 
     def save_networks(self):
         CustomLogger().info('Saving value and policy networks..')
@@ -56,7 +44,11 @@ class Agent:
             (self.value.v_net.state_dict(), self.value_save_file)
         ])
 
-    def load_networks(self, policy_load_file, value_load_file):
+    def load_state_dicts(self, p_state_dict, v_state_dict):
+        self.policy.p_net.load_state_dict(p_state_dict)
+        self.value.v_net.load_state_dict(v_state_dict)
+
+    def load_models_from_file(self, policy_load_file, value_load_file):
         CustomLogger().info('Loading value and policy networks..')
         load_models({
             self.policy.p_net: policy_load_file,
@@ -148,10 +140,6 @@ class AgentClient(Agent, Client):
         self.port = port
         self.setup()
 
-    def load_models(self, p_net, v_net):
-        self.policy.p_net.load_state_dict(p_net)
-        self.value.v_net.load_state_dict(v_net)
-
     def receive_config(self):
         self.training_config = self.receive()
         return self.training_config
@@ -164,7 +152,7 @@ class AgentClient(Agent, Client):
 
     def receive_models(self):
         p_net, v_net = self.receive()
-        self.load_models(p_net, v_net)
+        self.load_state_dicts(p_net, v_net)
 
     def send_models(self):
         payload = (self.policy.p_net.state_dict(),

@@ -5,41 +5,27 @@ from ppo import GaussianActor, CategoricalActor, Critic
 import torch
 import torch.nn as nn
 from gymnasium.spaces import Box, Discrete
+from .base import BaseModel
 
 
-class Aggregator:
+class Aggregator(BaseModel):
     def __init__(self, obs_dim, act_dim, p_load=None,
                  v_load=None, save_models=False,
                  n_agents=1, n_episodes=100,
                  hidden_sizes=(64, 64),
                  activation=nn.Tanh,) -> None:
+        super(Aggregator, self).__init__()
         self.p_load = p_load
         self.v_load = v_load
         self.save_models = save_models
         self.n_agents = n_agents
         self.n_episodes = n_episodes
         self.create_networks(
-            act_dim, obs_dim.shape[0], hidden_sizes, activation)
+            act_dim, obs_dim.shape[0], hidden_sizes, hidden_sizes, activation)
         if self.v_load is not None and self.p_load is not None:
             self.load()
 
         super(Aggregator, self).__init__()
-
-    def create_networks(self, action_space, obs_dim, hidden_sizes, activation):
-        # create policy
-        if isinstance(action_space, Box):
-            self.policy = GaussianActor(
-                obs_dim, action_space.shape[0], hidden_sizes, activation)
-            self.policy_copy = GaussianActor(
-                obs_dim, action_space.shape[0], hidden_sizes, activation)
-        else:
-            self.policy = CategoricalActor(
-                obs_dim, action_space.n, hidden_sizes, activation)
-            self.policy_copy = GaussianActor(
-                obs_dim, action_space.n, hidden_sizes, activation)
-        # create value
-        self.value = Critic(obs_dim, hidden_sizes, activation)
-        self.value_copy = Critic(obs_dim, hidden_sizes, activation)
 
     def load(self, p_load=None, v_load=None):
         p_file = 'fed_p' if p_load is None else p_load
@@ -66,7 +52,7 @@ class Aggregator:
         return self.policy.p_net, self.value.v_net
 
     def close(self, episode=None):
-        if self.save_models is True:
+        if (self.save_models):
             self.save_aggregate(episode=episode)
         print('closed.')
 

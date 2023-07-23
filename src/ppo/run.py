@@ -1,6 +1,6 @@
 from time import sleep
 import time
-from util.model_utils import save_models as save_m, state_dict_to_bytes, bytes_to_state_dict
+from util.model_utils import save_models as save_m, state_dict_to_bytes, bytes_to_state_dict, zeros_box_space
 from util.parser import *
 from util.logger import CustomLogger
 import gymnasium as gym
@@ -313,17 +313,22 @@ class RandomModel(nn.Module):
         return x
 
 def io_test():
-    model = RandomModel()
+    obs = zeros_box_space(3)
+    act = zeros_box_space(3)
 
-    def initialize_random_parameters(model):
-        for param in model.parameters():
-            param.data = torch.randn_like(param)
-    
-    initialize_random_parameters(model)
+    agent = Agent(obs, act)
 
-    state_dict = model.state_dict()
-    print(state_dict)
-    the_bytes = state_dict_to_bytes(state_dict)
-    # print(the_bytes)
-    state_dict = bytes_to_state_dict(the_bytes)
-    print(state_dict)
+    p_net = agent.policy.p_net.state_dict()
+    v_net = agent.value.v_net.state_dict()
+    print(p_net)
+
+
+    json_p, json_v = agent.state_dicts_to_json()
+    print(type(json_p))
+    p_net, v_net = agent.json_to_state_dicts(json_p, json_v)
+    agent.load_state_dicts(p_net, v_net)
+
+
+
+    p_net = agent.policy.p_net.state_dict()
+    v_net = agent.value.v_net.state_dict()
