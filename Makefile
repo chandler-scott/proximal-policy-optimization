@@ -1,12 +1,12 @@
 CC = g++
-CFLAGS = -Wall -Wextra -pedantic -std=c++11 -I/usr/include/python3.8
-LDFLAGS = -lpython3.8
+CFLAGS = -Wall -Wextra -pedantic -std=c++17 -I/usr/include/python3.8
+LDFLAGS = -lpython3.8 -ldl
 
 # Name of the executable file
 TARGET = ppo_training
 
 # Source file
-SRCS = src/main.cpp
+SRCS = src/main.cpp src/PythonWrapper.* src/AgentWrapper.* 
 
 # Object files
 OBJS = $(SRCS:.cpp=.o)

@@ -317,18 +317,21 @@ def io_test():
     act = zeros_box_space(3)
 
     agent = Agent(obs, act)
+    agent2 = Agent(obs, act)
+
 
     p_net = agent.policy.p_net.state_dict()
     v_net = agent.value.v_net.state_dict()
-    print(p_net)
+    # print(p_net)
 
 
     json_p, json_v = agent.state_dicts_to_json()
-    print(type(json_p))
+    print(json_p)
     p_net, v_net = agent.json_to_state_dicts(json_p, json_v)
-    agent.load_state_dicts(p_net, v_net)
+    agent2.load_state_dicts(p_net, v_net)
 
 
 
-    p_net = agent.policy.p_net.state_dict()
-    v_net = agent.value.v_net.state_dict()
+    p_net = agent2.policy.p_net.state_dict()
+    v_net = agent2.value.v_net.state_dict()
+    print(p_net)

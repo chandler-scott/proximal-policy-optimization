@@ -1,61 +1,75 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include "AgentWrapper.h"
+#include <iostream>
+
+const char* PyObjectToChar(PyObject* obj) {
+    if (obj == nullptr) {
+        return nullptr;
+    }
+
+    if (!PyUnicode_Check(obj)) {
+        PyErr_SetString(PyExc_TypeError, "Input object must be a Unicode string");
+        return nullptr;
+    }
+
+    return PyUnicode_AsUTF8(obj);
+}
+
+PyObject* CharToPyObject(const char* value) {
+    if (value == nullptr) {
+        Py_RETURN_NONE;
+    }
+
+    return PyUnicode_FromString(value);
+}
+
 
 int main()
 {
-    Py_Initialize();
 
-    PyObject *pModule = PyImport_ImportModule("envs");
-    if (pModule == NULL)
+    AgentWrapper agent;
+
+    // get the json from state_dicts
+    auto [pNetJson, vNetJson] = agent.getStateDictsAsJson();
+
+    // convert from PyObject* -> const char*
+    const char *c_str = PyObjectToChar(pNetJson);
+    if (c_str != NULL)
     {
-        PyErr_Print();
-        return 1;
+        printf("Conversion successful!\n");
+    }
+    else
+    {
+        printf("Conversion failed or object is not a Unicode string.\n");
     }
 
-    PyObject *pTestWorld = PyObject_GetAttrString(pModule, "TestWorld");
-    if (pTestWorld == NULL)
+    // std::cout << c_str << std::endl;
+
+    // convert from const char* -> PyObject*
+    PyObject *py_obj = CharToPyObject(c_str);
+    if (py_obj != NULL)
     {
-        PyErr_Print();
-        Py_DECREF(pModule);
-        return 1;
+        // Do something with the Python object...
+
+        Py_DECREF(py_obj); // Release the Python object
+    }
+    else
+    {
+        printf("Conversion from JSON string to Python object failed.\n");
     }
 
-    Py_DECREF(pTestWorld);
-    Py_DECREF(pModule);
+    std::cout << PyObjectToChar(py_obj) << std::endl;
 
-    pModule = PyImport_ImportModule("gym");
-    if (pModule == NULL)
-    {
-        PyErr_Print();
-        return 1;
-    }
 
-    PyObject *pFunc = PyObject_GetAttrString(pModule, "register");
-    if (!pFunc || !PyCallable_Check(pFunc))
-    {
-        if (PyErr_Occurred())
-            PyErr_Print();
-        return 1;
-    }
+    // get state_dicts from json
+    auto [pStateDict, vStateDict] = agent.getStateDictsFromJson(pNetJson, vNetJson);
+    // load state_dicts
+    agent.loadStateDicts(pStateDict, vStateDict);
 
-    PyObject *pArgs = PyTuple_New(1);
-    PyObject *pId = PyUnicode_FromString("TestWorld-v0");
-    PyTuple_SetItem(pArgs, 0, pId);    
+    // clean up
+    // Py_DECREF(pStrObjFromJson);
+    // Py_DECREF(pStrObj);
 
-    PyObject *pResult = PyObject_CallObject(pFunc, pArgs);
-    if (pResult == NULL)
-    {
-        PyErr_Print();
-        return 1;
-    }
-
-    Py_DECREF(pArgs);
-    Py_DECREF(pFunc);
-    Py_DECREF(pModule);
-
-    // Rest of your code
-    // ...
-
-    Py_Finalize();
     return 0;
 }

@@ -2,12 +2,16 @@ import io
 from ppo.actor_critic import *
 from gymnasium.spaces import Box, Discrete
 import json
+import base64
+import torch
+import numpy as np
+
+
 
 
 class BaseModel:
     def __init__(self) -> None:
         super(BaseModel, self).__init__()
-        print('base init')
 
 
     def create_networks(self, action_space, obs_dim, policy_hidden_sizes,
@@ -56,25 +60,18 @@ class BaseModel:
 
     def state_dicts_to_json(self):
         def state_dict_to_json(state_dict):
-            layer_values = {}  # Dictionary to store values for each layer
-
-            for name, param in state_dict.items():
-                if '.' in name:
-                    # Split the parameter name to get the layer name
-                    layer_name = name.split('.')[0]
-                else:
-                    layer_name = name
-
-                if layer_name not in layer_values:
-                    layer_values[layer_name] = []
-
-                # Convert the tensor values to a list and add them to the layer's value list
-                layer_values[layer_name].append(param.tolist())
-
-            # Convert layer values to JSON strings
-            layer_values_json = {layer_name: json.dumps(values) for layer_name, values in layer_values.items()}
-
-            return layer_values_json
+            json_dict = {}
+            for key, value in state_dict.items():
+                # Convert tensors to base64-encoded strings
+                if isinstance(value, torch.Tensor):
+                    value = value.cpu().numpy()
+                    value = {
+                        'dtype': str(value.dtype),
+                        'shape': list(value.shape),
+                        'data': base64.b64encode(value.tobytes()).decode('utf-8')
+                    }
+                    json_dict[key] = value
+            return json.dumps(json_dict)
 
         p_state_dict = self.policy.p_net.state_dict()
         v_state_dict = self.value.v_net.state_dict()
@@ -84,22 +81,17 @@ class BaseModel:
         return json_p_net, json_v_net    
         
     def json_to_state_dicts(self, json_p_net, json_v_net):
-        def json_to_state_dict(layer_values_json):
+        def json_to_state_dict(json_data):
+            json_dict = json.loads(json_data)
             state_dict = {}
-
-            for layer_name, values_json in layer_values_json.items():
-                values = json.loads(values_json)
-                tensors = [torch.tensor(value) for value in values]
-
-                # If the layer has only one parameter, directly assign the tensor to the layer name
-                if len(tensors) == 1:
-                    state_dict[layer_name] = tensors[0]
-                else:
-                    # If the layer has multiple parameters, assign them with names like 'layer_name.weight', 'layer_name.bias', etc.
-                    for i, tensor in enumerate(tensors):
-                        param_name = f"{layer_name}.weight" if i == 0 else f"{layer_name}.bias"
-                        state_dict[param_name] = tensor
-
+            for key, value in json_dict.items():
+                dtype_str = value['dtype']
+                dtype = getattr(np, dtype_str)
+                shape = tuple(value['shape'])
+                data = base64.b64decode(value['data'])
+                data = np.frombuffer(data, dtype=dtype).reshape(shape)
+                tensor = torch.tensor(data)
+                state_dict[key] = tensor
             return state_dict
         p_net = json_to_state_dict(json_p_net)
         v_net = json_to_state_dict(json_v_net)
