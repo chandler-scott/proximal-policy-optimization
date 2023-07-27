@@ -6,6 +6,11 @@ import torch
 from torch import nn
 from util import CustomLogger
 
+def to_doubles_list(py_ndarray):
+    np_array = np.array(py_ndarray)
+    float_list = np_array.tolist()
+    return float_list
+
 def state_dict_to_bytes(state_dict):
     bytes_io = io.BytesIO()
 
@@ -33,6 +38,22 @@ def serialize_state_dict(state_dict):
 def deserialize_state_dict(serialized_state_dict):
     state_dict = pickle.loads(serialized_state_dict)
     return state_dict
+
+def to_tensor(init_values, lower_bound=-1, upper_bound=1):
+    # Check if the provided bounds are valid
+    if lower_bound >= upper_bound:
+        raise ValueError("Lower bound must be less than the upper bound.")
+
+    # Convert the list of floats to a NumPy array
+    init_values_array = np.array(init_values, dtype=np.float32)
+
+    # Normalize the values between 0 and 1 based on the bounds
+    normalized_values = (init_values_array - lower_bound) / (upper_bound - lower_bound)
+
+    # Convert the NumPy array to a PyTorch tensor
+    tensor_values = torch.tensor(normalized_values, dtype=torch.float32)
+
+    return tensor_values
 
 def zeros_box_space(box_size, lower_bound=-1, upper_bound=1):
     # Check if the provided bounds are valid

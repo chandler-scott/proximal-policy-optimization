@@ -11,12 +11,13 @@ import torch
 
 class Agent(BaseModel):
     def __init__(self, observation_space, action_space,
+                 local_steps_per_epoch=50,
                  policy_hidden_sizes=(64, 64), value_hidden_sizes=(64, 64),
                  activation=nn.Tanh,
                  policy_lr=3e-4, value_lr=1e-3,
                  policy_load_file=None,
                  save_models=False, value_load_file=None,
-                 local_steps_per_epoch=50,  gamma=0.99, lam=0.95) -> None:
+                 gamma=0.99, lam=0.95) -> None:
         super(Agent, self).__init__()
         obs_dim = observation_space.shape[0]
         self.buffer = Buffer(obs_dim, action_space.shape,
