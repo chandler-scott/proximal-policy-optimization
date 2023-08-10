@@ -49,7 +49,7 @@ class Aggregator(BaseModel):
             policy_models, self.policy_copy.p_net)
         self.value.v_net = aggregate_models(
             value_models, self.value_copy.v_net)
-        return self.policy.p_net, self.value.v_net
+        return self.policy.p_net.state_dict(), self.value.v_net.state_dict()
 
     def close(self, episode=None):
         if (self.save_models):

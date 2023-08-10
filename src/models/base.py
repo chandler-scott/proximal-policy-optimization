@@ -21,11 +21,20 @@ class BaseModel:
         if isinstance(action_space, Box):
             self.policy = GaussianActor(
                 obs_dim, action_space.shape[0], policy_hidden_sizes, activation)
+            self.policy_copy = GaussianActor(
+                obs_dim, action_space.shape[0], policy_hidden_sizes, activation)
         else:
             self.policy = CategoricalActor(
                 obs_dim, action_space.n, policy_hidden_sizes, activation)
+            self.policy_copy = CategoricalActor(
+                obs_dim, action_space.n, policy_hidden_sizes, activation)
         # create value
         self.value = Critic(obs_dim, value_hidden_sizes, activation)
+        self.value_copy = Critic(obs_dim, value_hidden_sizes, activation)
+
+    def load_state_dicts(self, p_state_dict, v_state_dict):
+        self.policy.p_net.load_state_dict(p_state_dict)
+        self.value.v_net.load_state_dict(v_state_dict)
 
     def state_dicts_to_bytes(self):
         p_bytes_io = io.BytesIO()

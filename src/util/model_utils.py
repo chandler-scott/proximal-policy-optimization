@@ -40,21 +40,26 @@ def deserialize_state_dict(serialized_state_dict):
     return state_dict
 
 def to_tensor(init_values, lower_bound=-1, upper_bound=1):
-    # Check if the provided bounds are valid
-    if lower_bound >= upper_bound:
-        raise ValueError("Lower bound must be less than the upper bound.")
+    try:
+        # Check if the provided bounds are valid
+        if lower_bound >= upper_bound:
+            raise ValueError("Lower bound must be less than the upper bound.")
 
-    # Convert the list of floats to a NumPy array
-    init_values_array = np.array(init_values, dtype=np.float32)
+        # Convert the list of floats to a NumPy array
+        init_values_array = np.array(init_values, dtype=np.float32)
 
-    # Normalize the values between 0 and 1 based on the bounds
-    normalized_values = (init_values_array - lower_bound) / (upper_bound - lower_bound)
+        # Normalize the values between 0 and 1 based on the bounds
+        normalized_values = (init_values_array - lower_bound) / (upper_bound - lower_bound)
 
-    # Convert the NumPy array to a PyTorch tensor
-    tensor_values = torch.tensor(normalized_values, dtype=torch.float32)
+        # Convert the NumPy array to a PyTorch tensor
+        tensor_values = torch.tensor(normalized_values, dtype=torch.float32)
 
-    return tensor_values
+        return tensor_values
 
+    except Exception as e:
+        print("An error occurred:", e)
+        return None  # You can decide how to handle the error; returning None as an example
+    
 def zeros_box_space(box_size, lower_bound=-1, upper_bound=1):
     # Check if the provided bounds are valid
     if lower_bound >= upper_bound:

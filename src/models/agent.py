@@ -38,16 +38,15 @@ class Agent(BaseModel):
         self.policy_optimizer = Adam(self.policy.parameters(), lr=policy_lr)
         self.value_optimizer = Adam(self.value.parameters(), lr=value_lr)
 
+    def state_dicts(self):
+        return self.policy.p_net.state_dict(), self.value.v_net.state_dict()
+
     def save_networks(self):
         CustomLogger().info('Saving value and policy networks..')
         save_models([
             (self.policy.p_net.state_dict(), self.policy_save_file),
             (self.value.v_net.state_dict(), self.value_save_file)
         ])
-
-    def load_state_dicts(self, p_state_dict, v_state_dict):
-        self.policy.p_net.load_state_dict(p_state_dict)
-        self.value.v_net.load_state_dict(v_state_dict)
 
     def load_models_from_file(self, policy_load_file, value_load_file):
         CustomLogger().info('Loading value and policy networks..')
